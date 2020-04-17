@@ -122,7 +122,7 @@ while [ -z "$SETUP_DONE" ]; do
     elif [ ! -d "$OCSE_ROOT" ]; then
       SETUP_WARNING="$SETUP_WARNING\n### WARNING ### Path to OCSE not set properly."
       SETUP_WARNING="$SETUP_WARNING\n    For simulation please clone OpenCAPI Simulation Environment (OCSE)"
-      SETUP_WARNING="$SETUP_WARNING\n    from https://github.com/xxxxxxxxx/ocse FIXME!!"
+      SETUP_WARNING="$SETUP_WARNING\n    from https://github.com/OpenCAPI/ocse"
       SETUP_WARNING="$SETUP_WARNING\n    and let \$OCSE_ROOT point to it."
       SETUP_WARNING="$SETUP_WARNING\n    Please set Simulator to 'nosim' if you do not intend to run simulation."
     fi
@@ -138,6 +138,8 @@ while [ -z "$SETUP_DONE" ]; do
     AR='${SNAP_ROOT}/actions/hls_memcopy'
   elif [ -n "$HLS_MEMCOPY_1024" ]; then
     AR='${SNAP_ROOT}/actions/hls_memcopy_1024'
+  elif [ -n "$HLS_HBM_MEMCOPY_1024" ]; then
+    AR='${SNAP_ROOT}/actions/hls_hbm_memcopy_1024'
   elif [ -n "$HLS_SPONGE" ]; then
     AR='${SNAP_ROOT}/actions/hls_sponge'
   elif [ -n "$HLS_LATENCY_EVAL" ]; then
@@ -146,6 +148,8 @@ while [ -z "$SETUP_DONE" ]; do
     AR='${SNAP_ROOT}/actions/hls_latency_eval_1024'
   elif [ -n "$HLS_HELLOWORLD" ]; then
     AR='${SNAP_ROOT}/actions/hls_helloworld'
+  elif [ -n "$HLS_RX100G" ]; then
+    AR='${SNAP_ROOT}/actions/hls_rx100G'
   elif [ -n "$HDL_HELLOWORLD" ]; then
     AR='${SNAP_ROOT}/actions/hdl_helloworld'
   elif [ -n "$HDL_SINGLE_ENGINE" ]; then
@@ -264,6 +268,18 @@ while [ -z "$SETUP_DONE" ]; do
     else
       echo  "DENALI                  is set to: \"$DENALI\""
     fi
+  fi
+
+  # Note: HBM is defined via snap_config
+  if [ "$BRAM_USED" == "TRUE" ]; then
+    #echo "=====HBM setup========================================="
+      SETUP_INFO="$SETUP_INFO\n### INFO ### Setting of HBM/DDR is NOT with real HBM/DDR!"
+  fi
+
+  # Note: ETHERNET_USED is defined via snap_config
+  if [ "$ETHERNET_USED" == "TRUE" ] && [ "$ETH_LOOP_BACK" == "TRUE" ]; then
+    #echo "=====Ethernet setup===================================="
+      SETUP_INFO="$SETUP_INFO\n### INFO ### Setting of ETHERNET is a loopback with NO MAC"
   fi
 
 

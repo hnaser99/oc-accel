@@ -140,6 +140,8 @@ check_snap_settings:
 	@echo "                        SDRAM_USED      = $(SDRAM_USED)"
 	@echo "                        HBM_USED        = $(HBM_USED)"
 	@echo "                        NVME_USED       = $(NVME_USED)"
+	@echo "                        ETHERNET_USED   = $(ETHERNET_USED)"
+	@echo "                        ETH_LOOP_BACK   = $(ETH_LOOP_BACK)"
 	@echo "                        -----------------------"
 	@echo "                        ILA_DEBUG       = $(ILA_DEBUG)"
 	@echo "                        FLASH_USED      = $(FLASH_USED)"
@@ -216,10 +218,10 @@ action_hw: prepare_logs
 		echo "                        Error: Path to ACTION_ROOT is not defined properly"; exit -1; \
 	fi
 	@echo "Calling make -C $(ACTION_ROOT) hw" > $(LOGS_DIR)/action_make.log
-	@$(MAKE) -C $(ACTION_ROOT) hw >> $(LOGS_DIR)/action_make.log;
-	@if [ $$? -ne 0 ]; then \
-		echo -e "                        Error: please look into $(LOGS_DIR)/action_make.log"; exit -1; \
-	fi
+	@$(MAKE) -C $(ACTION_ROOT) hw; \
+		if [ $$? -ne 0 ]; then \
+			echo -e "                        Error: please look into $(LOGS_DIR)/action_make.log"; exit -1; \
+		fi
 	@if [ "$(HLS_SUPPORT)" == "TRUE" ]; then \
 	        echo "Calling make -C $(ACTION_ROOT)/hw vhdl" >> $(LOGS_DIR)/action_make.log; \
 		$(MAKE) -kC $(ACTION_ROOT)/hw vhdl >> $(LOGS_DIR)/action_make.log; \
@@ -229,10 +231,29 @@ action_hw: prepare_logs
 	fi
 	@echo -e "[CONFIG ACTION HW....] done  `date +"%T %a %b %d %Y"`";
 
+.create_ethernet_done: prepare_logs
+	@echo -e "[CREATE ETHERNET IP..] start `date +"%T %a %b %d %Y"`";
+	@rm -rf $(SNAP_HARDWARE_ROOT)/ip/eth_100G
+	echo "Calling create_eth_100G TCL script" >> $(LOGS_DIR)/eth_100G_make.log; 
+	@echo -e "			generating 100G Ethernet IP";
+	@cd $(BUILD_DIR)  &&  vivado -quiet -mode batch -source $(SETUP_DIR)/create_eth_100G_ip.tcl -notrace -log $(LOGS_DIR)/eth_100G_make.log -journal $(LOGS_DIR)/eth_100G_make.jou >> $(LOGS_DIR)/eth_100G_make.log; 
+	@echo -e "[CREATE ETHERNET IP..] done `date +"%T %a %b %d %Y"`";
+	@touch .create_ethernet_done
+
 .create_snap_ip_done:
 	@cd $(BUILD_DIR)  &&  vivado -quiet -mode batch -source $(SETUP_DIR)/create_snap_ip.tcl        -notrace -log $(LOGS_DIR)/create_snap_ip.log         -journal $(LOGS_DIR)/create_snap_ip.jou
 	@touch .create_snap_ip_done
 
+# HBM part - call a different bd if simulation or HBM (HBM is not supported by xsim)
+.create_hbm_done:
+	@echo -e "[CREATE HBM..........] start `date +"%T %a %b %d %Y"`";
+	@if [ "$(BRAM_USED)" == "TRUE" ]; then \
+		cd $(BUILD_DIR)  &&  vivado -quiet -mode batch -source $(SETUP_DIR)/create_hbm_for_simu.tcl -notrace -log $(LOGS_DIR)/create_hbm.log -journal $(LOGS_DIR)/create_hbm.jou; \
+	else \
+		cd $(BUILD_DIR)  &&  vivado -quiet -mode batch -source $(SETUP_DIR)/create_hbm.tcl -notrace -log $(LOGS_DIR)/create_hbm.log -journal $(LOGS_DIR)/create_hbm.jou; \
+	fi
+	@echo -e "[CREATE HBM..........] done  `date +"%T %a %b %d %Y"`";
+	@touch .create_hbm_done
 
 create_hls_ip:
 	@cd $(BUILD_DIR) &&  vivado -quiet -mode batch -source $(SETUP_DIR)/create_hls_ip.tcl -notrace -log $(LOGS_DIR)/create_hls_ip.log -journal $(LOGS_DIR)/create_hls_ip.jou
@@ -244,12 +265,14 @@ create_project: snap_preprocess
 	@$(MAKE) -s .create_snap_ip_done
 	@$(MAKE) -s create_hls_ip
 	@$(MAKE) -s patch_version
+	@if [ "$(ETHERNET_USED)" == "TRUE" ] && [ "$(ETH_LOOP_BACK)" == "FALSE" ]; then $(MAKE) -s .create_ethernet_done; fi
+	@if [ "$(HBM_USED)" == "TRUE" ]; then $(MAKE) -s .create_hbm_done; fi
 	@cd $(BUILD_DIR)  &&  vivado -quiet -mode batch -source $(SETUP_DIR)/create_framework.tcl -notrace -log $(LOGS_DIR)/create_framework.log  -journal $(LOGS_DIR)/create_framework.jou
 	@echo -e "[CREATE PROJECT......] done  `date +"%T %a %b %d %Y"`"
 
 hw_project_start:
 	@echo -e "======================================================="
-	@echo -e "== Precompiling the Action logic                     =="
+	@echo -e "== Precompiling the Action logic: `cat $(SNAP_ROOT)/snap_env.sh|grep actions|cut -f3- -d/`"
 	@echo -e "======================================================="
 	@echo -e "[HW PROJECT..........] start `date +"%T %a %b %d %Y"`"
 
@@ -314,11 +337,13 @@ else
 	@cd $(BUILD_DIR) && vivado -quiet -mode batch -source $(SETUP_DIR)/snap_build.tcl -notrace -log $(LOGS_DIR)/snap_build.log -journal $(LOGS_DIR)/snap_build.jou
 	@$(RM) -r .bitstream_name.txt
 endif
+ifeq ($(ILA_DEBUG),TRUE)
 	@echo -e "Generating ltx file for ILA debug."
 	@cd $(BUILD_DIR) && vivado -mode batch -source $(SETUP_DIR)/gen_probe_ltx.tcl -notrace  -log $(LOGS_DIR)/gen_probe_ltx.log         -journal $(LOGS_DIR)/gen_probe_ltx.jou
 	@echo -e "Generation of ltx file done."
 	@mv $(BUILD_DIR)/probe.ltx $(BUILD_DIR)/Images
 	@echo -e "Moved ltx file into Image."
+endif
 	@echo -e "[BUILD IMAGE.........] done  `date +"%T %a %b %d %Y"`"
 
 allow_%:
@@ -482,7 +507,7 @@ endif
 .PHONY: clean
 clean:
 	@echo -e "[CLEAN ENVIRONMENT...] start `date +"%T %a %b %d %Y"`"
-	@$(RM)    .hw_project_done .sim_project_done .create_snap_ip_done 
+	@$(RM)    .hw_project_done .sim_project_done .create_snap_ip_done .create_ethernet_done .create_hbm_done
 	@$(RM) -r $(SNAP_PP_FILES_VHD)                   \
 	          $(SNAP_TMP_FILES)                      \
 	          $(SNAP_MODELS)                         \
@@ -490,10 +515,12 @@ clean:
 	@$(RM) $(SNAP_ROOT)/hardware/hdl/core/*_tmp
 	@echo -e "                        vivado project" 1>/dev/null 2>/dev/null; 
 	@$(RM) -r viv_project*
+	@echo -e "                        snap bitstream file" 1>/dev/null 2>/dev/null; 
+	@$(RM) $(SNAP_ROOT)/hardware/setup/snap_bitstream_post.tcl
 	@echo -e "                        IPs" 1>/dev/null 2>/dev/null;
 	@$(RM) -r ip
 	@echo -e "                        sim files" 1>/dev/null 2>/dev/null;
-	@$(RM) -r sim/ies sim/xsim sim/modelsim sim/questa sim/xcelium 
+	@$(RM) -r sim/ies sim/xsim sim/xsim.dir sim/modelsim sim/questa sim/xcelium 
 	@echo -e "                        log files" 1>/dev/null 2>/dev/null;
 	@$(RM) -r logs
 	@echo -e "                        action / application" 1>/dev/null 2>/dev/null;
